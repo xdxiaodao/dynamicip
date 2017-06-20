@@ -1,5 +1,8 @@
 package com.github.xdxiaodao.dynamicip.model;
 
+import org.apache.commons.lang3.tuple.Pair;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -18,9 +21,10 @@ public class DynamicIp implements Comparable<DynamicIp>{
     private String city;
     private String isp;
     private String type;
-    private Integer anonymity; // 是否匿名
+    private String anonymity; // 是否匿名
     private Integer replyMsTime; // 响应时间，以毫秒为单位
     private AtomicInteger useCount = new AtomicInteger(0); // 使用次数
+    private AtomicBoolean isEffective = new AtomicBoolean(true); // 是否有效
 
 
     public String getIp() {
@@ -79,11 +83,11 @@ public class DynamicIp implements Comparable<DynamicIp>{
         this.type = type;
     }
 
-    public Integer getAnonymity() {
+    public String getAnonymity() {
         return anonymity;
     }
 
-    public void setAnonymity(Integer anonymity) {
+    public void setAnonymity(String anonymity) {
         this.anonymity = anonymity;
     }
 
@@ -107,12 +111,32 @@ public class DynamicIp implements Comparable<DynamicIp>{
         this.useCount.getAndIncrement();
     }
 
+    public boolean getIsEffective() {
+        return isEffective.get();
+    }
+
+    public void setIsEffective(boolean isEffective) {
+        this.isEffective.getAndSet(isEffective);
+    }
+
+    public void noEffective(boolean isEffective) {
+        this.isEffective.getAndSet(isEffective);
+    }
+
     @Override
     public int compareTo(DynamicIp o) {
         if (null == o) {
             return 1;
         }
-        return Integer.valueOf(this.useCount.get()).compareTo(o.getUseCount());
+        int diff = Integer.valueOf(this.useCount.get()).compareTo(o.getUseCount());
+        if (diff != 0) {
+            return diff;
+        }
+
+        return o.getIp().compareTo(this.getIp());
     }
 
+    public Pair<String, Integer> getKey() {
+        return Pair.of(ip, port);
+    }
 }

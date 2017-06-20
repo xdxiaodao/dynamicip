@@ -4,6 +4,7 @@ import com.github.xdxiaodao.dynamicip.model.DynamicIp;
 import com.github.xdxiaodao.dynamicip.model.DynamicIpPool;
 import com.github.xdxiaodao.dynamicip.service.spider.Data5uPageProcessor;
 import com.github.xdxiaodao.dynamicip.util.FileUtils;
+import com.github.xdxiaodao.dynamicip.util.IpUtils;
 import com.github.xdxiaodao.dynamicip.util.http.HttpWorker;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
@@ -22,10 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.*;
 
 /**
  * Created with dynamicip
@@ -37,14 +35,17 @@ import java.util.concurrent.PriorityBlockingQueue;
 @Service
 public class DynamicIpService implements InitializingBean{
     private static Logger logger = LoggerFactory.getLogger(DynamicIpService.class);
-    private static final String DYNAMIC_IP_CONFIG_FILE = "dynamic-ip.properties";
+    private static final String DYNAMIC_IP_CONFIG_FILE = "/dynamic-ip.properties";
     private static final Integer DEFAULT_CYCLE_SPIDER_TIME = 5 * 60 * 1000;
+    private static final Integer DEFAULT_RETRY_COUNT = 10;
 
     private ExecutorService spiderExecutor = Executors.newSingleThreadExecutor();
 
     private String spiderUrl;
 
     private Integer cycleSpiderTime;
+
+    private Integer retryCount;
 
     private DynamicIpPool dynamicIpPool = DynamicIpPool.me();
 
@@ -60,6 +61,7 @@ public class DynamicIpService implements InitializingBean{
             }
 
             cycleSpiderTime = NumberUtils.toInt(properties.getProperty("cycle.spider.time"), DEFAULT_CYCLE_SPIDER_TIME);
+            retryCount = NumberUtils.toInt(properties.getProperty("get.effective.ip.retry.count"), DEFAULT_CYCLE_SPIDER_TIME);
         } catch (Exception e) {
             logger.error("获取spider url失败", e);
         }
@@ -72,8 +74,9 @@ public class DynamicIpService implements InitializingBean{
             public void run() {
                 while(true) {
                     try {
-                        Thread.sleep(cycleSpiderTime);
+                        logger.info("execute data5u page processor");
                         Spider.create(new Data5uPageProcessor(dynamicIpPool)).addUrl(spiderUrl).thread(1).run();
+                        Thread.sleep(cycleSpiderTime);
                     } catch (Exception e) {
                         logger.error("爬取ip信息失败", e);
                     }
@@ -82,18 +85,48 @@ public class DynamicIpService implements InitializingBean{
         });
     }
 
-    public DynamicIp getEffectiveIp(String url) {
-        DynamicIp dynamicIp = dynamicIpPool.peek();
-        while (!isEffectiveIp(dynamicIp, url)) {
-            dynamicIpPool.remove();
-            dynamicIp = dynamicIpPool.peek();
-        }
+    public DynamicIp getEffectiveIp() {
+        DynamicIp dynamicIp = null;
+        try {
+            // @todo 优化建议
+            // 1.缺少空池，或者池中ip少的判断，
+            // 2.规则单一，如某个ip使用时间较长，无法指定切换到某个ip
+            dynamicIp = dynamicIpPool.poll(500, TimeUnit.MILLISECONDS);
+            int failedCount = 0;
+            while (!isEffectiveIp(dynamicIp)) {
+                if (failedCount > DEFAULT_CYCLE_SPIDER_TIME) {
+                    logger.info("Get dynamic ip error!");
+                    return null;
+                }
 
-        dynamicIp.incCount();
-        return dynamicIp;
+                if (null != dynamicIp) {
+                    dynamicIp.setIsEffective(false);
+//                    dynamicIpPool.offer(dynamicIp, 500, TimeUnit.MILLISECONDS);
+                }
+
+                failedCount++;
+                dynamicIp = dynamicIpPool.poll(500, TimeUnit.MILLISECONDS);
+            }
+
+            dynamicIp.incCount();
+            dynamicIpPool.offer(dynamicIp, 500, TimeUnit.MILLISECONDS);
+            return dynamicIp;
+        } catch (InterruptedException e) {
+//            e.printStackTrace();
+            logger.error("获取队列元素失败", e);
+            return null;
+        }
     }
 
-    private boolean isEffectiveIp(DynamicIp dynamicIp, String url) {
-        return false;
+    private boolean isEffectiveIp(DynamicIp dynamicIp) {
+        if (null == dynamicIp) {
+            return false;
+        }
+        if (!IpUtils.isHostConnectable(dynamicIp.getIp(), dynamicIp.getPort())) {
+            return false;
+        }
+
+        // 判断是否有效
+        return dynamicIp.getIsEffective();
     }
 }
