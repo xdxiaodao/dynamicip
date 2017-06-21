@@ -2,10 +2,12 @@ package com.github.xdxiaodao.dynamicip.service.spider;
 
 import com.github.xdxiaodao.dynamicip.model.DynamicIp;
 import com.github.xdxiaodao.dynamicip.model.DynamicIpPool;
+import com.github.xdxiaodao.dynamicip.util.FileUtils;
+import com.github.xdxiaodao.dynamicip.util.IpUtils;
 import com.google.common.collect.Maps;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.ArrayUtils;
-import org.apache.commons.lang.NumberUtils;
+import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.stereotype.Service;
 import sun.net.util.IPAddressUtil;
@@ -18,7 +20,9 @@ import us.codecraft.webmagic.selector.Selectable;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Created with dynamicip
@@ -29,20 +33,12 @@ import java.util.concurrent.PriorityBlockingQueue;
  */
 public class Data5uPageProcessor implements PageProcessor {
     private DynamicIpPool dynamicIpPool;
-
-    private static Map<String, Integer> portMap = Maps.newHashMap();
+    private static final String DATA5U_IP_TRANS_FILE = "/data5u-ip-trans.properties";
+    private static Properties portMap;
+    private AtomicBoolean isProcess = new AtomicBoolean(false); // 是否在处理中
 
     static {
-//        GEGE 808
-//        GEA 80
-//        GEGEA 8080
-//        HZZZC 9999
-//        CFACE 3128
-        portMap.put("GEGE", 808);
-        portMap.put("GEA", 80);
-        portMap.put("GEGEA", 8080);
-        portMap.put("HZZZC", 9999);
-        portMap.put("CFACE", 3128);
+        portMap = FileUtils.loadProperties(Data5uPageProcessor.class.getResourceAsStream(DATA5U_IP_TRANS_FILE));
     }
 
     public Data5uPageProcessor(DynamicIpPool dynamicIps) {
@@ -89,15 +85,19 @@ public class Data5uPageProcessor implements PageProcessor {
 
             DynamicIp dynamicIp = new DynamicIp();
             dynamicIp.setIp(ip);
-            dynamicIp.setPort(portMap.containsKey(portClass) ? portMap.get(portClass) : port);
+            dynamicIp.setPort(portMap.containsKey(portClass) ? NumberUtils.toInt(portMap.getProperty(portClass)) : port);
             dynamicIp.setAnonymity(isAnonymity);
             dynamicIp.setCountry(country);
             dynamicIp.setCity(city);
             dynamicIp.setIsp(lsp);
             dynamicIp.setReplyMsTime(NumberUtils.stringToInt(time.replace("秒", "")));
 
-            this.dynamicIpPool.put(dynamicIp);
+            if (IpUtils.isHostConnectable(ip, dynamicIp.getPort())) {
+                this.dynamicIpPool.put(dynamicIp);
+            }
         }
+
+        this.setIsProcess(false);
     }
 
     /**
@@ -121,6 +121,14 @@ public class Data5uPageProcessor implements PageProcessor {
             }
         }
         return site;
+    }
+
+    public boolean getIsProcess() {
+        return isProcess.get();
+    }
+
+    public void setIsProcess(boolean isProcess) {
+        this.isProcess.getAndSet(isProcess);
     }
 
     public static void main(String[] args) {

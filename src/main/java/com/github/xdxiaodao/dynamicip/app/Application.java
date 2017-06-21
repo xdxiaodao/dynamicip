@@ -2,6 +2,8 @@ package com.github.xdxiaodao.dynamicip.app;
 
 import com.github.xdxiaodao.dynamicip.model.DynamicIp;
 import com.github.xdxiaodao.dynamicip.service.DynamicIpService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
@@ -13,6 +15,7 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
  * Desc
  */
 public class Application {
+    private static Logger logger = LoggerFactory.getLogger(Application.class);
 
     public static void main(String[] args) {
         ApplicationContext context=new ClassPathXmlApplicationContext(
@@ -25,9 +28,9 @@ public class Application {
                 Thread.sleep(1000);
                 DynamicIp dynamicIp = bookSpiderService.getEffectiveIp();
                 if (null != dynamicIp) {
-                    System.out.println("get dynamic ip:" + dynamicIp.getIp() + ", port:" + dynamicIp.getPort());
+                    logger.info("get dynamic ip:" + dynamicIp.getIp() + ", port:" + dynamicIp.getPort());
                 } else {
-                    System.out.println("ip is null");
+                    logger.info("ip is null");
                 }
 
             } catch (InterruptedException e) {

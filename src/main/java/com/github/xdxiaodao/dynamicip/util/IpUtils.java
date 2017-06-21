@@ -26,8 +26,7 @@ public class IpUtils {
     public static boolean isHostConnectable(String host, int port) {
         Socket socket = new Socket();
         try {
-            socket.setSoTimeout(1000);
-            socket.connect(new InetSocketAddress(host, port));
+            socket.connect(new InetSocketAddress(host, port), 2000);
         } catch (IOException e) {
             logger.error("{}:{} 链接错误", host, port);
             return false;
@@ -39,5 +38,12 @@ public class IpUtils {
             }
         }
         return true;
+    }
+
+    public static void main(String[] args) {
+        long start = System.currentTimeMillis();
+        boolean isConnect = isHostConnectable("113.121.42.16", 808);
+        System.out.println("result is :" + isConnect);
+        System.out.println("cost time:" + (System.currentTimeMillis() - start));
     }
 }

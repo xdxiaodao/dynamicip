@@ -6,9 +6,11 @@ import com.github.xdxiaodao.dynamicip.service.spider.Data5uPageProcessor;
 import com.github.xdxiaodao.dynamicip.util.FileUtils;
 import com.github.xdxiaodao.dynamicip.util.IpUtils;
 import com.github.xdxiaodao.dynamicip.util.http.HttpWorker;
+import com.google.common.collect.Lists;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.math.NumberUtils;
+import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.slf4j.Logger;
@@ -19,10 +21,7 @@ import us.codecraft.webmagic.Spider;
 
 import javax.annotation.PostConstruct;
 import java.io.InputStream;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -38,8 +37,11 @@ public class DynamicIpService implements InitializingBean{
     private static final String DYNAMIC_IP_CONFIG_FILE = "/dynamic-ip.properties";
     private static final Integer DEFAULT_CYCLE_SPIDER_TIME = 5 * 60 * 1000;
     private static final Integer DEFAULT_RETRY_COUNT = 10;
+    private static final Integer DEFAULT_IP_POOL_MONITOR_CHECK_NUM = 5000;
 
     private ExecutorService spiderExecutor = Executors.newSingleThreadExecutor();
+
+    private ScheduledExecutorService ipPoolMonitor = Executors.newScheduledThreadPool(1, new BasicThreadFactory.Builder().namingPattern("ipPoolThread").build());
 
     private String spiderUrl;
 
@@ -47,7 +49,13 @@ public class DynamicIpService implements InitializingBean{
 
     private Integer retryCount;
 
+    private Integer ipPoolMinNum;
+
+    private Integer ipPoolMonitorCheckNum;
+
     private DynamicIpPool dynamicIpPool = DynamicIpPool.me();
+
+    private Data5uPageProcessor data5uPageProcessor;
 
     @PostConstruct
     public void init() {
@@ -60,37 +68,88 @@ public class DynamicIpService implements InitializingBean{
                 spiderUrl = "http://www.data5u.com/free/gngn/index.shtml";
             }
 
-            cycleSpiderTime = NumberUtils.toInt(properties.getProperty("cycle.spider.time"), DEFAULT_CYCLE_SPIDER_TIME);
+//            cycleSpiderTime = NumberUtils.toInt(properties.getProperty("cycle.spider.time"), DEFAULT_CYCLE_SPIDER_TIME);
             retryCount = NumberUtils.toInt(properties.getProperty("get.effective.ip.retry.count"), DEFAULT_CYCLE_SPIDER_TIME);
+            ipPoolMinNum = NumberUtils.toInt(properties.getProperty("ip.pool.min.num"), 2);
+            ipPoolMonitorCheckNum = NumberUtils.toInt(properties.getProperty("ip.pool.monitor.check.time"), DEFAULT_IP_POOL_MONITOR_CHECK_NUM);
         } catch (Exception e) {
-            logger.error("获取spider url失败", e);
+            logger.error("获取spider 配置失败", e);
         }
+
+        data5uPageProcessor = new Data5uPageProcessor(dynamicIpPool);
     }
 
     @Override
     public void afterPropertiesSet() throws Exception {
+        ipPoolMonitor.schedule(new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    try {
+                        if (dynamicIpPool.size() < ipPoolMinNum) {
+                            logger.info("ip pool num is low, execute data5u page processor");
+                            startSpider();
+                        }
+
+                        Thread.sleep(ipPoolMonitorCheckNum);
+                    } catch (Exception e) {
+                        logger.error("monitor ip pool error!", e);
+                    }
+                }
+            }
+        }, 1, TimeUnit.SECONDS);
+    }
+
+    private void asyncSpider() {
         spiderExecutor.submit(new Runnable() {
             @Override
             public void run() {
-                while(true) {
-                    try {
-                        logger.info("execute data5u page processor");
-                        Spider.create(new Data5uPageProcessor(dynamicIpPool)).addUrl(spiderUrl).thread(1).run();
-                        Thread.sleep(cycleSpiderTime);
-                    } catch (Exception e) {
-                        logger.error("爬取ip信息失败", e);
-                    }
+                try {
+                    logger.info("execute data5u page processor");
+                    startSpider();
+                } catch (Exception e) {
+                    logger.error("爬取ip信息失败", e);
                 }
             }
         });
     }
 
+    private synchronized void startSpider() {
+        boolean isRunning = data5uPageProcessor.getIsProcess();
+        if (!isRunning) {
+            logger.info("启动新进程进行爬取");
+            data5uPageProcessor.setIsProcess(true);
+            Spider.create(data5uPageProcessor).addUrl(spiderUrl).thread(1).run();
+        } else {
+            logger.info("当前ip爬取进程正在运行，不启动新进程");
+        }
+    }
+
+    /**
+     * 获取ip池中所有ip
+     * @return 所有ip
+     */
+    public List<DynamicIp> getAllIp() {
+        if (dynamicIpPool.size() > 0) {
+            return Arrays.asList(dynamicIpPool.toArray(new DynamicIp[]{}));
+        }
+
+        return Lists.newArrayList();
+    }
+
+    /**
+     * 获取单一有效IP
+     * @return 有效ip
+     */
     public DynamicIp getEffectiveIp() {
         DynamicIp dynamicIp = null;
         try {
-            // @todo 优化建议
-            // 1.缺少空池，或者池中ip少的判断，
-            // 2.规则单一，如某个ip使用时间较长，无法指定切换到某个ip
+            // 空池判断
+            if (dynamicIpPool.size() == 0) {
+                asyncSpider();
+                return null;
+            }
+
             dynamicIp = dynamicIpPool.poll(500, TimeUnit.MILLISECONDS);
             int failedCount = 0;
             while (!isEffectiveIp(dynamicIp)) {
@@ -122,9 +181,9 @@ public class DynamicIpService implements InitializingBean{
         if (null == dynamicIp) {
             return false;
         }
-        if (!IpUtils.isHostConnectable(dynamicIp.getIp(), dynamicIp.getPort())) {
-            return false;
-        }
+//        if (!IpUtils.isHostConnectable(dynamicIp.getIp(), dynamicIp.getPort())) {
+//            return false;
+//        }
 
         // 判断是否有效
         return dynamicIp.getIsEffective();
