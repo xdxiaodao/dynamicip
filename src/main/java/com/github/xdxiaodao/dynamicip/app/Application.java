@@ -29,6 +29,8 @@ public class Application {
                 DynamicIp dynamicIp = bookSpiderService.getEffectiveIp();
                 if (null != dynamicIp) {
                     logger.info("get dynamic ip:" + dynamicIp.getIp() + ", port:" + dynamicIp.getPort());
+                    bookSpiderService.setUnEffective(dynamicIp);
+                    logger.info("dynamic ip:{}, current {} effective", dynamicIp.getIp(), dynamicIp.getIsEffective() ? "is" : "is not");
                 } else {
                     logger.info("ip is null");
                 }

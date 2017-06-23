@@ -24,6 +24,7 @@ public class DynamicIp implements Comparable<DynamicIp>{
     private String anonymity; // 是否匿名
     private Integer replyMsTime; // 响应时间，以毫秒为单位
     private AtomicInteger useCount = new AtomicInteger(0); // 使用次数
+    private AtomicInteger failedCount = new AtomicInteger(0); // 失败次数
     private AtomicBoolean isEffective = new AtomicBoolean(true); // 是否有效
 
 
@@ -121,6 +122,18 @@ public class DynamicIp implements Comparable<DynamicIp>{
 
     public void noEffective(boolean isEffective) {
         this.isEffective.getAndSet(isEffective);
+    }
+
+    public Integer getFailedCount() {
+        return failedCount.get();
+    }
+
+    public void setFailedCount(Integer failedCount) {
+        this.failedCount.getAndSet(failedCount);
+    }
+
+    public void incFailedCount() {
+        int tmpFailedCount = this.failedCount.incrementAndGet();
     }
 
     @Override

@@ -2,17 +2,14 @@ package com.github.xdxiaodao.dynamicip.service;
 
 import com.github.xdxiaodao.dynamicip.model.DynamicIp;
 import com.github.xdxiaodao.dynamicip.model.DynamicIpPool;
+import com.github.xdxiaodao.dynamicip.service.strategy.IpUnEffectiveStrategy;
+import com.github.xdxiaodao.dynamicip.service.strategy.StrategyFactory;
 import com.github.xdxiaodao.dynamicip.service.spider.Data5uPageProcessor;
 import com.github.xdxiaodao.dynamicip.util.FileUtils;
-import com.github.xdxiaodao.dynamicip.util.IpUtils;
-import com.github.xdxiaodao.dynamicip.util.http.HttpWorker;
 import com.google.common.collect.Lists;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.utils.HttpClientUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -187,5 +184,24 @@ public class DynamicIpService implements InitializingBean{
 
         // 判断是否有效
         return dynamicIp.getIsEffective();
+    }
+
+    /**
+     * 设置ip无效
+     * @param dynamicIp
+     */
+    public void setUnEffective(DynamicIp dynamicIp) {
+        dynamicIp.incFailedCount();
+        // 根据策略判断是否有效
+        try {
+            IpUnEffectiveStrategy strategy = StrategyFactory.getStrategy();
+            dynamicIp.setIsEffective(strategy.isEffective(dynamicIp));
+        } catch (Exception e) {
+            logger.error("获取ip失效策略失败", e);
+        }
+    }
+
+    public void setEffective(DynamicIp dynamicIp) {
+        dynamicIp.setIsEffective(true);
     }
 }
