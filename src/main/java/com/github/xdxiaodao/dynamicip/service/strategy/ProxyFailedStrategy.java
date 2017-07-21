@@ -12,6 +12,10 @@ import com.github.xdxiaodao.dynamicip.model.DynamicIp;
 public class ProxyFailedStrategy implements IpUnEffectiveStrategy{
     @Override
     public boolean isEffective(DynamicIp dynamicIp) {
+        if ("localhost".equalsIgnoreCase(dynamicIp.getIp())) {
+            return true;
+        }
+
         if (dynamicIp.getFailedCount() > 5) {
             return false;
         }

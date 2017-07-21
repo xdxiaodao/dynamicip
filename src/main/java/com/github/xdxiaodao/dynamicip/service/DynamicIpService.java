@@ -14,7 +14,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Service;
+import us.codecraft.webmagic.Request;
 import us.codecraft.webmagic.Spider;
+import us.codecraft.webmagic.SpiderListener;
 
 import javax.annotation.PostConstruct;
 import java.io.InputStream;
@@ -56,6 +58,11 @@ public class DynamicIpService implements InitializingBean{
 
     @PostConstruct
     public void init() {
+        // 添加本机IP
+        DynamicIp dynamicIp = new DynamicIp();
+        dynamicIp.setIp("localhost");
+        dynamicIpPool.add(dynamicIp);
+
         InputStream inputStream = null;
         try {
             inputStream = this.getClass().getResourceAsStream(DYNAMIC_IP_CONFIG_FILE);
@@ -116,7 +123,9 @@ public class DynamicIpService implements InitializingBean{
         if (!isRunning) {
             logger.info("启动新进程进行爬取");
             data5uPageProcessor.setIsProcess(true);
-            Spider.create(data5uPageProcessor).addUrl(spiderUrl).thread(1).run();
+            List<SpiderListener> spiderListenerList = Lists.newArrayList();
+            spiderListenerList.add(new DynamicIpListener(data5uPageProcessor));
+            Spider.create(data5uPageProcessor).setSpiderListeners(spiderListenerList).addUrl(spiderUrl).thread(1).run();
         } else {
             logger.info("当前ip爬取进程正在运行，不启动新进程");
         }
@@ -203,5 +212,24 @@ public class DynamicIpService implements InitializingBean{
 
     public void setEffective(DynamicIp dynamicIp) {
         dynamicIp.setIsEffective(true);
+    }
+
+
+    public static class DynamicIpListener implements SpiderListener {
+        private Data5uPageProcessor pageProcessor;
+
+        public DynamicIpListener(Data5uPageProcessor pageProcessor) {
+            this.pageProcessor = pageProcessor;
+        }
+
+        @Override
+        public void onSuccess(Request request) {
+            pageProcessor.setIsProcess(false);
+        }
+
+        @Override
+        public void onError(Request request) {
+            pageProcessor.setIsProcess(false);
+        }
     }
 }
